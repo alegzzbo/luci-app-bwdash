@@ -21,20 +21,29 @@ function load() {
 	st.clients = st.clients || {};
 	st.daily = st.daily || {};
 	st.last = st.last || {};
+	st.ip2mac = st.ip2mac || {};
 	st.since = st.since || time();
 	st.ts = 0;
 }
 function save() { mkdir(DIR); writefile(dbpath(), sprintf('%J', st)); }
 
-function neigh() {
+function neigh(ip2mac) {
 	let m = {};
 	for (let l in split(readfile('/proc/net/arp') || '', '\n')) {
 		let f = split(trim(l), /\s+/);
-		if (length(f) >= 6 && f[2] != '0x0' && f[0] != 'IP address') m[lc(f[0])] = lc(f[3]);
+		if (length(f) >= 6 && f[2] != '0x0' && f[0] != 'IP address') {
+			let ip = lc(f[0]), mac = lc(f[3]);
+			m[ip] = mac;
+			if (ip2mac) ip2mac[ip] = mac;
+		}
 	}
 	for (let l in split(sh('ip -6 neigh show'), '\n')) {
 		let r = match(l, /^(\S+)\s+dev\s+\S+\s+lladdr\s+([0-9a-fA-F:]{17})/);
-		if (r) m[lc(r[1])] = lc(r[2]);
+		if (r) {
+			let ip = lc(r[1]), mac = lc(r[2]);
+			m[ip] = mac;
+			if (ip2mac) ip2mac[ip] = mac;
+		}
 	}
 	return m;
 }
@@ -55,26 +64,25 @@ function collect(force) {
 	load();
 	let now = time();
 	if (!force && st.ts && now - st.ts < 2) return;
-	let dt = st.ts ? now - st.ts : 0, nb = neigh(), ls = leases(), dk = dayKey(now);
+	let dt = st.ts ? now - st.ts : 0, nb = neigh(st.ip2mac), ls = leases(), dk = dayKey(now);
 	let day = st.daily[dk] || (st.daily[dk] = { up: 0, down: 0 });
 
-	// Карта имя_хоста -> MAC из уже известных клиентов и DHCP-лизов
 	let byName = {};
 	for (let m, c in st.clients) if (match(m, /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/) && c.name) byName[lc(c.name)] = m;
 	for (let k, nm in ls) if (match(k, /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/) && nm) byName[lc(nm)] = k;
 
-	// Слияние записей без MAC (ключ = IP) по таблице соседей или по имени из odhcpd
 	for (let k in keys(st.clients)) {
 		if (match(k, /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/)) continue;
 		let lk = lc(k);
-		let realMac = nb[lk] || (ls[lk] ? byName[lc(ls[lk])] : null);
+		let realMac = nb[lk] || st.ip2mac[lk] || (ls[lk] ? byName[lc(ls[lk])] : null);
+		if (!realMac && index(lk, ':') >= 0) sh('ping -6 -c 1 -W 1 ' + lk + ' >/dev/null 2>&1 &');
 		if (realMac && realMac != k) {
 			let old = st.clients[k];
 			let dst = st.clients[realMac] || (st.clients[realMac] = { name: '', ip: '', up: 0, down: 0, ur: 0, dr: 0, last: 0 });
 			dst.up += old.up || 0;
 			dst.down += old.down || 0;
 			if ((old.last || 0) > (dst.last || 0)) dst.last = old.last;
-			if (!dst.ip && old.ip) dst.ip = old.ip;
+			if (!dst.ip && old.ip && index(old.ip, ':') < 0) dst.ip = old.ip;
 			if (!dst.name && (old.name || ls[lk])) dst.name = old.name || ls[lk];
 			delete st.clients[k];
 		}
@@ -93,7 +101,8 @@ function collect(force) {
 				let d = (p == null || b < p) ? b : b - p;
 				if (!d) continue;
 				let lip = lc(ip);
-				let mac = nb[lip] || (ls[lip] ? byName[lc(ls[lip])] : null) || lip;
+				let mac = nb[lip] || st.ip2mac[lip] || (ls[lip] ? byName[lc(ls[lip])] : null) || lip;
+				if (mac == lip && index(lip, ':') >= 0) sh('ping -6 -c 1 -W 1 ' + lip + ' >/dev/null 2>&1 &');
 				let c = st.clients[mac] || (st.clients[mac] = { name: '', ip: '', up: 0, down: 0, ur: 0, dr: 0, last: 0 });
 				c[dir] += d; day[dir] += d; c.last = now;
 				if (dt) c[dir == 'up' ? 'ur' : 'dr'] += d / dt;
@@ -121,7 +130,7 @@ return {
 		collect: { call: function() { collect(true); return {}; } },
 		reset: { call: function() {
 			load();
-			st = { clients: {}, daily: {}, last: st.last, since: time(), ts: 0 };
+			st = { clients: {}, daily: {}, last: st.last, ip2mac: st.ip2mac, since: time(), ts: 0 };
 			save();
 			return {};
 		} }
