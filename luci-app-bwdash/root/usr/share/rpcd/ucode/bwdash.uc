@@ -30,11 +30,11 @@ function neigh() {
 	let m = {};
 	for (let l in split(readfile('/proc/net/arp') || '', '\n')) {
 		let f = split(trim(l), /\s+/);
-		if (length(f) >= 6 && f[2] != '0x0' && f[0] != 'IP address') m[f[0]] = lc(f[3]);
+		if (length(f) >= 6 && f[2] != '0x0' && f[0] != 'IP address') m[lc(f[0])] = lc(f[3]);
 	}
 	for (let l in split(sh('ip -6 neigh show'), '\n')) {
-		let r = match(l, /^(\S+) dev \S+ lladdr (\S+)/);
-		if (r) m[r[1]] = lc(r[2]);
+		let r = match(l, /^(\S+)\s+dev\s+\S+\s+lladdr\s+([0-9a-fA-F:]{17})/);
+		if (r) m[lc(r[1])] = lc(r[2]);
 	}
 	return m;
 }
@@ -42,7 +42,11 @@ function leases() {
 	let m = {};
 	for (let l in split(readfile('/tmp/dhcp.leases') || '', '\n')) {
 		let f = split(trim(l), ' ');
-		if (length(f) >= 4) m[lc(f[1])] = f[3] != '*' ? f[3] : '';
+		if (length(f) >= 4 && f[3] != '*') m[lc(f[1])] = f[3];
+	}
+	for (let l in split(readfile('/tmp/hosts/odhcpd') || '', '\n')) {
+		let f = split(trim(l), /\s+/);
+		if (length(f) >= 2 && substr(f[0], 0, 1) != '#') m[lc(f[0])] = f[1];
 	}
 	return m;
 }
@@ -53,6 +57,22 @@ function collect(force) {
 	if (!force && st.ts && now - st.ts < 2) return;
 	let dt = st.ts ? now - st.ts : 0, nb = neigh(), ls = leases(), dk = dayKey(now);
 	let day = st.daily[dk] || (st.daily[dk] = { up: 0, down: 0 });
+
+	// Слияние ранее созданных записей без MAC (ключ = IP), если MAC уже появился в таблице соседей
+	for (let k in keys(st.clients)) {
+		let realMac = nb[lc(k)];
+		if (realMac && realMac != k) {
+			let old = st.clients[k];
+			let dst = st.clients[realMac] || (st.clients[realMac] = { name: '', ip: '', up: 0, down: 0, ur: 0, dr: 0, last: 0 });
+			dst.up += old.up || 0;
+			dst.down += old.down || 0;
+			if ((old.last || 0) > (dst.last || 0)) dst.last = old.last;
+			if (!dst.ip && old.ip) dst.ip = old.ip;
+			if (!dst.name && old.name) dst.name = old.name;
+			delete st.clients[k];
+		}
+	}
+
 	for (let m, c in st.clients) { c.ur = 0; c.dr = 0; }
 	for (let s, dir in SETS) {
 		let o = trim(sh('nft -j list set inet bwmon ' + s));
@@ -65,15 +85,20 @@ function collect(force) {
 				st.last[k] = b;
 				let d = (p == null || b < p) ? b : b - p;
 				if (!d) continue;
-				let mac = nb[ip] || ip;
+				let lip = lc(ip);
+				let mac = nb[lip] || lip;
 				let c = st.clients[mac] || (st.clients[mac] = { name: '', ip: '', up: 0, down: 0, ur: 0, dr: 0, last: 0 });
 				c[dir] += d; day[dir] += d; c.last = now;
 				if (dt) c[dir == 'up' ? 'ur' : 'dr'] += d / dt;
-				if (!c.ip || index(ip, ':') < 0) c.ip = ip;
+				if (!c.ip || (index(ip, ':') < 0 && index(c.ip, ':') >= 0)) c.ip = ip;
+				if (!c.name && ls[lip]) c.name = ls[lip];
 			}
 		}
 	}
-	for (let m, c in st.clients) if (ls[m]) c.name = ls[m];
+	for (let m, c in st.clients) {
+		if (ls[m]) c.name = ls[m];
+		else if (c.ip && ls[lc(c.ip)]) c.name = ls[lc(c.ip)];
+	}
 	let ks = sort(keys(st.daily));
 	while (length(ks) > 90) delete st.daily[shift(ks)];
 	st.ts = now;

@@ -39,6 +39,16 @@ function card(t, c) {
 	return E('div', { 'class': 'cbi-section', style: 'margin:0' }, [E('h3', t)].concat(c));
 }
 
+function ifAddr(x) {
+	var a4 = (x['ipv4-address'] || [])[0];
+	if (a4 && a4.address) return a4.address;
+	var a6 = (x['ipv6-address'] || [])[0];
+	if (a6 && a6.address) return a6.address + (a6.mask ? '/' + a6.mask : '');
+	var p6 = (x['ipv6-prefix'] || [])[0];
+	if (p6 && p6.address) return p6.address + '/' + p6.mask;
+	return '-';
+}
+
 function update(r) {
 	var i = r[0], ifs = r[1], bw = r[2], cl = [], u = 0, d = 0,
 		m = i.memory, used = m.total - (m.available != null ? m.available : m.free),
@@ -67,8 +77,7 @@ function update(r) {
 
 	dom.content(box.net, card(_('Network'), E('table', { 'class': 'table' },
 		ifs.filter(function(x) { return x.up && x.interface != 'loopback'; }).map(function(x) {
-			var a = (x['ipv4-address'] || [])[0];
-			return kv(x.interface + ' (' + x.proto + ')', (a ? a.address : '-') + ' · ' + '%t'.format(x.uptime || 0));
+			return kv(x.interface + ' (' + x.proto + ')', ifAddr(x) + ' · ' + '%t'.format(x.uptime || 0));
 		})
 	)));
 
@@ -91,11 +100,13 @@ function update(r) {
 			_('Client'), '↓', '↑', _('Total ↓'), _('Total ↑'), _('Seen ago')
 		].map(function(t) { return E('th', { 'class': 'th', style: thStyle }, t); }))
 	].concat(cl.map(function(c) {
+		var isMac = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i.test(c.mac);
+		var sub = [c.ip, isMac ? c.mac : ''].filter(Boolean).join(' · ');
 		return E('tr', { 'class': 'tr' }, [
 			E('td', { 'class': 'td', style: tdStyle }, [
 				E('strong', c.name || c.mac),
-				E('br'),
-				E('small', { style: 'opacity:0.75' }, (c.ip ? c.ip + ' · ' : '') + c.mac)
+				sub && sub !== (c.name || c.mac) ? E('br') : '',
+				sub && sub !== (c.name || c.mac) ? E('small', { style: 'opacity:0.75' }, sub) : ''
 			]),
 			E('td', { 'class': 'td', style: tdStyle }, R(c.dr)),
 			E('td', { 'class': 'td', style: tdStyle }, R(c.ur)),
