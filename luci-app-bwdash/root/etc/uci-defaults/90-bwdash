@@ -1,0 +1,4 @@
+#!/bin/sh
+/etc/init.d/bwdash enable
+/etc/init.d/bwdash restart
+exit 0

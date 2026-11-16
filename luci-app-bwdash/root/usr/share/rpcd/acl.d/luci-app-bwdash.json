@@ -1,0 +1,11 @@
+{
+	"luci-app-bwdash": {
+		"description": "Grant access to dashboard and bandwidth monitor",
+		"read": { "ubus": {
+			"luci.bwdash": [ "get" ],
+			"system": [ "info", "board" ],
+			"network.interface": [ "dump" ]
+		} },
+		"write": { "ubus": { "luci.bwdash": [ "reset" ] } }
+	}
+}

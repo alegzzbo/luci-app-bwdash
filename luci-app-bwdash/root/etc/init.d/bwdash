@@ -1,0 +1,21 @@
+#!/bin/sh /etc/rc.common
+START=99
+USE_PROCD=1
+
+start_service() {
+	local lan
+	lan=$(uci -q get bwdash.config.lan_dev || echo br-lan)
+	nft delete table inet bwmon 2>/dev/null
+	sed "s/@LAN@/$lan/g" /usr/share/bwdash/bwdash.nft | nft -f - || return 1
+	procd_open_instance
+	procd_set_param command /bin/sh -c 'while sleep 60; do ubus call luci.bwdash collect >/dev/null 2>&1; done'
+	procd_close_instance
+}
+
+stop_service() {
+	nft delete table inet bwmon 2>/dev/null
+}
+
+service_triggers() {
+	procd_add_reload_trigger bwdash
+}

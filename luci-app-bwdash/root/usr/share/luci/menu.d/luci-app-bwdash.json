@@ -1,0 +1,8 @@
+{
+	"admin/status/bwdash": {
+		"title": "Dashboard+",
+		"order": 1,
+		"action": { "type": "view", "path": "bwdash/dashboard" },
+		"depends": { "acl": [ "luci-app-bwdash" ] }
+	}
+}

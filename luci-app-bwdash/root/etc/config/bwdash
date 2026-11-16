@@ -1,0 +1,3 @@
+config bwdash 'config'
+	option lan_dev 'br-lan'
+	option db '/tmp/bwdash/db.json'

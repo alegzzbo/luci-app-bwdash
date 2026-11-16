@@ -1,0 +1,13 @@
+table inet bwmon {
+	set up4 { type ipv4_addr; flags dynamic; size 8192; }
+	set dn4 { type ipv4_addr; flags dynamic; size 8192; }
+	set up6 { type ipv6_addr; flags dynamic; size 8192; }
+	set dn6 { type ipv6_addr; flags dynamic; size 8192; }
+	chain fwd {
+		type filter hook forward priority -10; policy accept;
+		iifname "@LAN@" ip daddr != { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 224.0.0.0/4 } add @up4 { ip saddr counter }
+		oifname "@LAN@" ip saddr != { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 224.0.0.0/4 } add @dn4 { ip daddr counter }
+		iifname "@LAN@" ip6 daddr != { fc00::/7, fe80::/10, ff00::/8 } add @up6 { ip6 saddr counter }
+		oifname "@LAN@" ip6 saddr != { fc00::/7, fe80::/10, ff00::/8 } add @dn6 { ip6 daddr counter }
+	}
+}
