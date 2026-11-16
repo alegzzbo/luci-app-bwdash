@@ -58,9 +58,16 @@ function collect(force) {
 	let dt = st.ts ? now - st.ts : 0, nb = neigh(), ls = leases(), dk = dayKey(now);
 	let day = st.daily[dk] || (st.daily[dk] = { up: 0, down: 0 });
 
-	// Слияние ранее созданных записей без MAC (ключ = IP), если MAC уже появился в таблице соседей
+	// Карта имя_хоста -> MAC из уже известных клиентов и DHCP-лизов
+	let byName = {};
+	for (let m, c in st.clients) if (match(m, /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/) && c.name) byName[lc(c.name)] = m;
+	for (let k, nm in ls) if (match(k, /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/) && nm) byName[lc(nm)] = k;
+
+	// Слияние записей без MAC (ключ = IP) по таблице соседей или по имени из odhcpd
 	for (let k in keys(st.clients)) {
-		let realMac = nb[lc(k)];
+		if (match(k, /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/)) continue;
+		let lk = lc(k);
+		let realMac = nb[lk] || (ls[lk] ? byName[lc(ls[lk])] : null);
 		if (realMac && realMac != k) {
 			let old = st.clients[k];
 			let dst = st.clients[realMac] || (st.clients[realMac] = { name: '', ip: '', up: 0, down: 0, ur: 0, dr: 0, last: 0 });
@@ -68,7 +75,7 @@ function collect(force) {
 			dst.down += old.down || 0;
 			if ((old.last || 0) > (dst.last || 0)) dst.last = old.last;
 			if (!dst.ip && old.ip) dst.ip = old.ip;
-			if (!dst.name && old.name) dst.name = old.name;
+			if (!dst.name && (old.name || ls[lk])) dst.name = old.name || ls[lk];
 			delete st.clients[k];
 		}
 	}
@@ -86,7 +93,7 @@ function collect(force) {
 				let d = (p == null || b < p) ? b : b - p;
 				if (!d) continue;
 				let lip = lc(ip);
-				let mac = nb[lip] || lip;
+				let mac = nb[lip] || (ls[lip] ? byName[lc(ls[lip])] : null) || lip;
 				let c = st.clients[mac] || (st.clients[mac] = { name: '', ip: '', up: 0, down: 0, ur: 0, dr: 0, last: 0 });
 				c[dir] += d; day[dir] += d; c.last = now;
 				if (dt) c[dir == 'up' ? 'ur' : 'dr'] += d / dt;
