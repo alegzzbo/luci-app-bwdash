@@ -95,24 +95,32 @@ function update(r) {
 	var thStyle = 'white-space:nowrap;padding:6px 10px;text-align:left';
 	var tdStyle = 'white-space:nowrap;padding:6px 10px;vertical-align:middle';
 
+	function metric(val, lbl) {
+		return E('td', { 'class': 'td', style: tdStyle }, [
+			E('div', { style: 'font-weight:500' }, val),
+			E('small', { style: 'opacity:0.65;font-size:0.78em' }, lbl)
+		]);
+	}
+
 	dom.content(box.tbl, E('table', { 'class': 'table', style: 'min-width:540px;width:100%;table-layout:auto' }, [
-		E('tr', { 'class': 'tr table-titles' }, [
-			_('Client'), '↓', '↑', _('Total ↓'), _('Total ↑'), _('Seen ago')
-		].map(function(t) { return E('th', { 'class': 'th', style: thStyle }, t); }))
+		E('tr', { 'class': 'tr', style: 'border-bottom:1px solid rgba(128,128,128,0.25)' }, [
+			_('Клиент'), _('Приём ↓'), _('Отдача ↑'), _('Скачано ↓'), _('Отдано ↑'), _('Был в сети')
+		].map(function(t) { return E('th', { 'class': 'th', style: thStyle + ';opacity:0.8' }, t); }))
 	].concat(cl.map(function(c) {
 		var isMac = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i.test(c.mac);
 		var sub = [c.ip, isMac ? c.mac : ''].filter(Boolean).join(' · ');
+		var ago = c.last ? '%t назад'.format(Math.max(0, bw.ts - c.last)) : '-';
 		return E('tr', { 'class': 'tr' }, [
-			E('td', { 'class': 'td', style: tdStyle }, [
+			E('td', { 'class': 'td', style: tdStyle + ';max-width:185px;overflow:hidden;text-overflow:ellipsis' }, [
 				E('strong', c.name || c.mac),
 				sub && sub !== (c.name || c.mac) ? E('br') : '',
 				sub && sub !== (c.name || c.mac) ? E('small', { style: 'opacity:0.75' }, sub) : ''
 			]),
-			E('td', { 'class': 'td', style: tdStyle }, R(c.dr)),
-			E('td', { 'class': 'td', style: tdStyle }, R(c.ur)),
-			E('td', { 'class': 'td', style: tdStyle }, B(c.down)),
-			E('td', { 'class': 'td', style: tdStyle }, B(c.up)),
-			E('td', { 'class': 'td', style: tdStyle }, c.last ? '%t'.format(Math.max(0, bw.ts - c.last)) : '-')
+			metric(R(c.dr), _('скорость ↓')),
+			metric(R(c.ur), _('скорость ↑')),
+			metric(B(c.down), _('всего ↓')),
+			metric(B(c.up), _('всего ↑')),
+			metric(ago, _('активность'))
 		]);
 	}))));
 }
