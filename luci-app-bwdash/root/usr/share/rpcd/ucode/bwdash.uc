@@ -11,6 +11,13 @@ function sh(cmd) {
 	if (p) { o = p.read('all'); p.close(); }
 	return o;
 }
+let pinged = {};
+function probe(ip) {
+	let n = time();
+	if (pinged[ip] && n - pinged[ip] < 300) return;
+	pinged[ip] = n;
+	sh('ping -6 -c1 -W1 ' + ip + ' >/dev/null 2>&1 &');
+}
 function dbpath() { return cursor().get('bwdash', 'config', 'db') || DIR + '/db.json'; }
 function dayKey(t) { let d = localtime(t); return sprintf('%04d-%02d-%02d', d.year, d.mon, d.mday); }
 
@@ -31,7 +38,7 @@ function neigh(ip2mac) {
 	let m = {};
 	for (let l in split(readfile('/proc/net/arp') || '', '\n')) {
 		let f = split(trim(l), /\s+/);
-		if (length(f) >= 6 && f[2] != '0x0' && f[0] != 'IP address') {
+		if (length(f) >= 6 && f[2] != '0x0' && f[0] != 'IP') {
 			let ip = lc(f[0]), mac = lc(f[3]);
 			m[ip] = mac;
 			if (ip2mac) ip2mac[ip] = mac;
@@ -75,7 +82,7 @@ function collect(force) {
 		if (match(k, /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/)) continue;
 		let lk = lc(k);
 		let realMac = nb[lk] || st.ip2mac[lk] || (ls[lk] ? byName[lc(ls[lk])] : null);
-		if (!realMac && index(lk, ':') >= 0) sh('ping -6 -c 1 -W 1 ' + lk + ' >/dev/null 2>&1 &');
+		if (!realMac && index(lk, ':') >= 0) probe(lk);
 		if (realMac && realMac != k) {
 			let old = st.clients[k];
 			let dst = st.clients[realMac] || (st.clients[realMac] = { name: '', ip: '', up: 0, down: 0, ur: 0, dr: 0, last: 0 });
@@ -102,7 +109,7 @@ function collect(force) {
 				if (!d) continue;
 				let lip = lc(ip);
 				let mac = nb[lip] || st.ip2mac[lip] || (ls[lip] ? byName[lc(ls[lip])] : null) || lip;
-				if (mac == lip && index(lip, ':') >= 0) sh('ping -6 -c 1 -W 1 ' + lip + ' >/dev/null 2>&1 &');
+				if (mac == lip && index(lip, ':') >= 0) probe(lip);
 				let c = st.clients[mac] || (st.clients[mac] = { name: '', ip: '', up: 0, down: 0, ur: 0, dr: 0, last: 0 });
 				c[dir] += d; day[dir] += d; c.last = now;
 				if (dt) c[dir == 'up' ? 'ur' : 'dr'] += d / dt;
@@ -117,6 +124,7 @@ function collect(force) {
 	}
 	let ks = sort(keys(st.daily));
 	while (length(ks) > 90) delete st.daily[shift(ks)];
+	if (length(st.ip2mac) > 2000) st.ip2mac = {};
 	st.ts = now;
 	save();
 }
